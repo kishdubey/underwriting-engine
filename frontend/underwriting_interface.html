@@ -206,6 +206,93 @@
             color: #888;
             margin-top: 4px;
         }
+
+        .upload-section {
+            background: #f8f9fa;
+            border: 2px dashed #667eea;
+            border-radius: 12px;
+            padding: 30px;
+            text-align: center;
+            margin-bottom: 30px;
+            transition: all 0.3s;
+        }
+
+        .upload-section:hover {
+            border-color: #764ba2;
+            background: #f0f0ff;
+        }
+
+        .upload-section.dragover {
+            background: #e8e8ff;
+            border-color: #764ba2;
+            transform: scale(1.02);
+        }
+
+        .upload-label {
+            display: block;
+            cursor: pointer;
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .upload-text {
+            font-size: 16px;
+            color: #667eea;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .upload-subtext {
+            font-size: 13px;
+            color: #888;
+        }
+
+        #file-upload {
+            display: none;
+        }
+
+        .file-info {
+            margin-top: 15px;
+            padding: 12px;
+            background: white;
+            border-radius: 6px;
+            display: none;
+        }
+
+        .file-info.show {
+            display: block;
+        }
+
+        .file-info-text {
+            color: #28a745;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .parse-status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        .parse-status.success {
+            background: #e8f5e9;
+            color: #28a745;
+        }
+
+        .parse-status.warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .parse-status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
     </style>
 </head>
 <body>
@@ -239,18 +326,32 @@
         </div>
         
         <form id="underwritingForm" class="form-container">
+            <!-- Excel Upload Section -->
+            <div class="upload-section" id="uploadSection">
+                <label for="file-upload" class="upload-label">
+                    <div class="upload-icon">📊</div>
+                    <div class="upload-text">Upload Rent Roll (Excel/PDF)</div>
+                    <div class="upload-subtext">Drag & drop or click to browse • Auto-extracts lease data</div>
+                </label>
+                <input type="file" id="file-upload" accept=".xlsx,.xls,.pdf">
+                <div class="file-info" id="fileInfo">
+                    <div class="file-info-text" id="fileName"></div>
+                    <div class="parse-status" id="parseStatus"></div>
+                </div>
+            </div>
+
             <div class="form-section">
                 <h2>Property Details</h2>
                 <div class="form-grid">
                     <div class="form-group full-width">
                         <label for="property_address">Property Address</label>
-                        <input type="text" id="property_address" name="property_address" 
-                               value="120 Valleywood Drive, Markham" required>
+                        <input type="text" id="property_address" name="property_address"
+                               placeholder="e.g., 120 Valleywood Drive" required>
                     </div>
                     <div class="form-group">
                         <label for="purchase_price">Purchase Price ($)</label>
-                        <input type="number" id="purchase_price" name="purchase_price" 
-                               value="17800000" required>
+                        <input type="number" id="purchase_price" name="purchase_price"
+                               placeholder="e.g., 17800000" required>
                     </div>
                     <div class="form-group">
                         <label for="property_type">Property Type</label>
@@ -269,37 +370,56 @@
                 <div class="form-grid">
                     <div class="form-group full-width">
                         <label for="tenant">Tenant Name</label>
-                        <input type="text" id="tenant" name="tenant" 
-                               value="Sentrex Health Solutions Inc." required>
+                        <input type="text" id="tenant" name="tenant"
+                               placeholder="Extracted from rent roll" required>
                     </div>
                     <div class="form-group">
                         <label for="area_sf">Area (SF)</label>
-                        <input type="number" id="area_sf" name="area_sf" 
-                               value="60071" required>
+                        <input type="number" id="area_sf" name="area_sf"
+                               placeholder="Extracted from rent roll" required>
                     </div>
                     <div class="form-group">
                         <label for="current_rent_psf">Current Net Rent ($/SF/Year)</label>
-                        <input type="number" step="0.01" id="current_rent_psf" name="current_rent_psf" 
-                               value="14.21" required>
+                        <input type="number" step="0.01" id="current_rent_psf" name="current_rent_psf"
+                               placeholder="Extracted from rent roll" required>
+                        <span class="help-text">Base rent only (excluding recoveries)</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="cam_psf">CAM Recovery ($/SF/Year)</label>
+                        <input type="number" step="0.01" id="cam_psf" name="cam_psf"
+                               placeholder="Extracted from rent roll">
+                        <span class="help-text">Common area maintenance (NNN leases)</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="tax_psf">Tax Recovery ($/SF/Year)</label>
+                        <input type="number" step="0.01" id="tax_psf" name="tax_psf"
+                               placeholder="Extracted from rent roll">
+                        <span class="help-text">Property tax pass-through</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="insurance_psf">Insurance Recovery ($/SF/Year)</label>
+                        <input type="number" step="0.01" id="insurance_psf" name="insurance_psf"
+                               placeholder="0.00">
+                        <span class="help-text">Insurance cost recovery (if applicable)</span>
                     </div>
                     <div class="form-group">
                         <label for="lease_start">Lease Start Date</label>
-                        <input type="date" id="lease_start" name="lease_start" 
-                               value="2022-03-01" required>
+                        <input type="date" id="lease_start" name="lease_start"
+                               placeholder="Extracted from rent roll" required>
                     </div>
                     <div class="form-group">
                         <label for="lease_end">Lease End Date</label>
-                        <input type="date" id="lease_end" name="lease_end" 
-                               value="2032-02-29" required>
+                        <input type="date" id="lease_end" name="lease_end"
+                               placeholder="Extracted from rent roll" required>
                     </div>
                     <div class="form-group">
                         <label for="annual_escalation">Annual Escalation (%)</label>
-                        <input type="number" step="0.01" id="annual_escalation" name="annual_escalation" 
-                               value="3.00" required>
+                        <input type="number" step="0.01" id="annual_escalation" name="annual_escalation"
+                               placeholder="Extracted from rent roll" required>
                     </div>
                 </div>
             </div>
-            
+
             <div class="form-section">
                 <h2>Market Assumptions (Upon Lease Expiry)</h2>
                 <div class="form-grid">
@@ -358,6 +478,98 @@
     </div>
     
     <script>
+        // File upload handling
+        const fileUpload = document.getElementById('file-upload');
+        const uploadSection = document.getElementById('uploadSection');
+        const fileInfo = document.getElementById('fileInfo');
+        const fileName = document.getElementById('fileName');
+        const parseStatus = document.getElementById('parseStatus');
+
+        // Drag and drop handlers
+        uploadSection.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadSection.classList.add('dragover');
+        });
+
+        uploadSection.addEventListener('dragleave', () => {
+            uploadSection.classList.remove('dragover');
+        });
+
+        uploadSection.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadSection.classList.remove('dragover');
+
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                fileUpload.files = files;
+                handleFileUpload(files[0]);
+            }
+        });
+
+        fileUpload.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFileUpload(e.target.files[0]);
+            }
+        });
+
+        async function handleFileUpload(file) {
+            fileName.textContent = `📄 ${file.name}`;
+            fileInfo.classList.add('show');
+            parseStatus.textContent = 'Parsing Excel file...';
+            parseStatus.className = 'parse-status';
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('http://localhost:5001/parse-excel', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    // Populate form fields with extracted data
+                    const data = result.data;
+
+                    if (data.property_address) document.getElementById('property_address').value = data.property_address;
+                    if (data.tenant) document.getElementById('tenant').value = data.tenant;
+                    if (data.area_sf) document.getElementById('area_sf').value = data.area_sf;
+                    if (data.current_rent_psf) document.getElementById('current_rent_psf').value = data.current_rent_psf;
+                    if (data.cam_psf) document.getElementById('cam_psf').value = data.cam_psf;
+                    if (data.tax_psf) document.getElementById('tax_psf').value = data.tax_psf;
+                    if (data.insurance_psf) document.getElementById('insurance_psf').value = data.insurance_psf;
+
+                    // Convert dates from MM/DD/YYYY to YYYY-MM-DD for HTML date inputs
+                    if (data.lease_start) {
+                        const startDate = new Date(data.lease_start);
+                        document.getElementById('lease_start').value = startDate.toISOString().split('T')[0];
+                    }
+                    if (data.lease_end) {
+                        const endDate = new Date(data.lease_end);
+                        document.getElementById('lease_end').value = endDate.toISOString().split('T')[0];
+                    }
+
+                    if (data.annual_escalation) document.getElementById('annual_escalation').value = data.annual_escalation;
+
+                    if (result.is_complete) {
+                        parseStatus.textContent = '✅ Successfully extracted all lease data! Review and add assumptions below.';
+                        parseStatus.classList.add('success');
+                    } else {
+                        parseStatus.textContent = `⚠️ Partial extraction. Missing: ${result.missing_fields.join(', ')}. Please fill in manually.`;
+                        parseStatus.classList.add('warning');
+                    }
+                } else {
+                    parseStatus.textContent = `❌ Failed to parse: ${result.error}`;
+                    parseStatus.classList.add('error');
+                }
+            } catch (error) {
+                parseStatus.textContent = `❌ Error: ${error.message}`;
+                parseStatus.classList.add('error');
+            }
+        }
+
         document.getElementById('underwritingForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
@@ -373,9 +585,9 @@
             data.lease_end = new Date(data.lease_end).toLocaleDateString('en-US');
             
             // Convert to numbers
-            ['purchase_price', 'area_sf', 'current_rent_psf', 'annual_escalation', 
-             'renewal_probability', 'market_rent_psf', 'market_escalation', 
-             'vacancy_months', 'ti_psf', 'exit_cap_rate'].forEach(field => {
+            ['purchase_price', 'area_sf', 'current_rent_psf', 'cam_psf', 'tax_psf',
+             'insurance_psf', 'annual_escalation', 'renewal_probability', 'market_rent_psf',
+             'market_escalation', 'vacancy_months', 'ti_psf', 'exit_cap_rate'].forEach(field => {
                 data[field] = parseFloat(data[field]);
             });
             

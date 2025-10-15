@@ -242,17 +242,67 @@ class CREUnderwriter:
         # Total Rental Revenue
         ws[f'A{row}'] = 'Total Rental Revenue'
         ws[f'A{row}'].font = Font(bold=True)
+        total_rental_row = row
         for col in range(2, 14):
             ws.cell(row, col).value = f'={get_column_letter(col)}{scheduled_rent_row}'
             ws.cell(row, col).number_format = '#,##0'
         row += 2
-        
-        # Total Tenant Revenue (same as rental)
+
+        # Operating Expense Recoveries (CAM, Tax, Insurance)
+        total_recoveries = lease_data.get('total_recoveries', 0)
+        if total_recoveries > 0:
+            ws[f'A{row}'] = 'Operating Expense Recoveries'
+            ws[f'A{row}'].font = Font(bold=True)
+            recoveries_row = row
+
+            # Add individual recovery lines
+            row += 1
+            cam_annual = lease_data.get('cam_annual', 0)
+            if cam_annual > 0:
+                ws[f'A{row}'] = '  CAM Recoveries'
+                for col in range(2, 14):
+                    ws.cell(row, col).value = cam_annual
+                    ws.cell(row, col).number_format = '#,##0'
+                row += 1
+
+            tax_annual = lease_data.get('tax_annual', 0)
+            if tax_annual > 0:
+                ws[f'A{row}'] = '  Tax Recoveries'
+                for col in range(2, 14):
+                    ws.cell(row, col).value = tax_annual
+                    ws.cell(row, col).number_format = '#,##0'
+                row += 1
+
+            insurance_annual = lease_data.get('insurance_annual', 0)
+            if insurance_annual > 0:
+                ws[f'A{row}'] = '  Insurance Recoveries'
+                for col in range(2, 14):
+                    ws.cell(row, col).value = insurance_annual
+                    ws.cell(row, col).number_format = '#,##0'
+                row += 1
+
+            # Total Recoveries
+            ws[f'A{row}'] = 'Total Recoveries'
+            ws[f'A{row}'].font = Font(bold=True)
+            total_recoveries_row = row
+            for col in range(2, 14):
+                first_recovery_row = recoveries_row + 1
+                last_recovery_row = row - 1
+                ws.cell(row, col).value = f'=SUM({get_column_letter(col)}{first_recovery_row}:{get_column_letter(col)}{last_recovery_row})'
+                ws.cell(row, col).number_format = '#,##0'
+            row += 2
+        else:
+            total_recoveries_row = None
+
+        # Total Tenant Revenue (rental + recoveries)
         ws[f'A{row}'] = 'Total Tenant Revenue'
         ws[f'A{row}'].font = Font(bold=True)
         tenant_revenue_row = row
         for col in range(2, 14):
-            ws.cell(row, col).value = f'={get_column_letter(col)}{row-2}'
+            if total_recoveries_row:
+                ws.cell(row, col).value = f'={get_column_letter(col)}{total_rental_row}+{get_column_letter(col)}{total_recoveries_row}'
+            else:
+                ws.cell(row, col).value = f'={get_column_letter(col)}{total_rental_row}'
             ws.cell(row, col).number_format = '#,##0'
         row += 2
         

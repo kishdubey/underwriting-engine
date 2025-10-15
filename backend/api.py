@@ -6,9 +6,11 @@ Simple Flask API that receives deal parameters and returns underwriting package
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from cre_underwriter import CREUnderwriter
+from excel_parser import parse_rent_roll, parse_rent_roll_flexible, parse_pdf_rent_roll, validate_parsed_data
 from datetime import datetime
 import os
 import tempfile
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for web interface
@@ -29,6 +31,9 @@ def underwrite():
         "tenant": "Sentrex Health Solutions Inc.",
         "area_sf": 60071,
         "current_rent_psf": 14.21,
+        "cam_psf": 5.07,
+        "tax_psf": 2.17,
+        "insurance_psf": 0.00,
         "lease_start": "03/01/2022",
         "lease_end": "02/29/2032",
         "annual_escalation": 3.0,
@@ -45,7 +50,15 @@ def underwrite():
 
         # Transform simple input to full format
         area = data['area_sf']
+
+        # Calculate base rent
         annual_rent = data['current_rent_psf'] * area
+
+        # Calculate operating expense recoveries (for NNN leases)
+        cam_annual = data.get('cam_psf', 0) * area
+        tax_annual = data.get('tax_psf', 0) * area
+        insurance_annual = data.get('insurance_psf', 0) * area
+        total_recoveries = cam_annual + tax_annual + insurance_annual
 
         # Parse dates and calculate lease term
         from datetime import datetime
@@ -68,7 +81,11 @@ def underwrite():
             'lease_term_years': int(lease_term_years),
             'current_annual_rent': annual_rent,
             'area_sf': area,
-            'escalation_rate': data['annual_escalation'] / 100
+            'escalation_rate': data['annual_escalation'] / 100,
+            'cam_annual': cam_annual,
+            'tax_annual': tax_annual,
+            'insurance_annual': insurance_annual,
+            'total_recoveries': total_recoveries
         }
 
         assumptions = {
@@ -116,6 +133,84 @@ def underwrite():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route('/parse-excel', methods=['POST'])
+def parse_excel():
+    """
+    Parse Excel rent roll and return extracted data.
+    User can then review/edit before generating underwriting.
+
+    Upload Excel file, returns JSON with extracted fields:
+    {
+        "property_address": "...",
+        "tenant": "...",
+        "area_sf": 60071,
+        "current_rent_psf": 14.21,
+        "cam_psf": 5.07,
+        "tax_psf": 2.17,
+        ...
+    }
+    """
+    try:
+        # Check if file was uploaded
+        if 'file' not in request.files:
+            return jsonify({"error": "No file uploaded"}), 400
+
+        file = request.files['file']
+
+        if file.filename == '':
+            return jsonify({"error": "No file selected"}), 400
+
+        # Validate file extension
+        is_pdf = file.filename.lower().endswith('.pdf')
+        is_excel = file.filename.lower().endswith(('.xlsx', '.xls'))
+
+        if not (is_pdf or is_excel):
+            return jsonify({"error": "File must be Excel (.xlsx, .xls) or PDF (.pdf)"}), 400
+
+        # Save to temporary file with appropriate suffix
+        filename = secure_filename(file.filename)
+        suffix = '.pdf' if is_pdf else '.xlsx'
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            file.save(tmp.name)
+            temp_path = tmp.name
+
+        # Parse based on file type
+        try:
+            if is_pdf:
+                lease_data = parse_pdf_rent_roll(temp_path)
+            else:
+                # Try standard Excel parser first
+                try:
+                    lease_data = parse_rent_roll(temp_path)
+                except Exception as e:
+                    # Fallback to flexible parser
+                    print(f"Standard parser failed: {e}. Trying flexible parser...")
+                    lease_data = parse_rent_roll_flexible(temp_path)
+        except Exception as e:
+            os.unlink(temp_path)
+            return jsonify({"error": f"Failed to parse file: {str(e)}"}), 500
+
+        # Clean up temp file
+        os.unlink(temp_path)
+
+        # Validate extracted data
+        is_valid, missing_fields = validate_parsed_data(lease_data)
+
+        response = {
+            "success": True,
+            "data": lease_data,
+            "is_complete": is_valid,
+            "missing_fields": missing_fields
+        }
+
+        if not is_valid:
+            response["message"] = f"Extracted data is incomplete. Missing: {', '.join(missing_fields)}. Please fill in manually."
+
+        return jsonify(response)
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to parse Excel: {str(e)}"}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=True)

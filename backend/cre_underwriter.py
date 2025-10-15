@@ -32,20 +32,193 @@ class CREUnderwriter:
         
     def create_underwriting(self, property_data, lease_data, assumptions):
         """Main method to create complete underwriting package"""
-        
+
         # Remove default sheet
         if 'Sheet' in self.wb.sheetnames:
             del self.wb['Sheet']
-            
-        # Create all required sheets
-        self.create_valuation_summary(property_data, assumptions)
+
+        # Create cash flow sheet FIRST to calculate metrics
         self.create_cash_flow(property_data, lease_data, assumptions)
+
+        # Calculate return metrics from cash flow
+        cash_flow_metrics = self.calculate_return_metrics(property_data, lease_data, assumptions)
+
+        # Create all other sheets
+        self.create_valuation_summary(property_data, lease_data, assumptions, cash_flow_metrics)
         self.create_rent_schedule(lease_data, assumptions)
         self.create_market_leasing_summary(assumptions)
-        
+
         return self.wb
-    
-    def create_valuation_summary(self, property_data, assumptions):
+
+    def calculate_return_metrics(self, property_data, lease_data, assumptions):
+        """Calculate all return metrics from cash flow projections"""
+        from datetime import datetime
+        from dateutil.relativedelta import relativedelta
+
+        purchase_price = property_data['purchase_price']
+        discount_rate = assumptions['discount_rate']
+        exit_cap_rate = assumptions['exit_cap_rate']
+
+        # Calculate annual cash flows (Years 1-10)
+        annual_cash_flows = []
+        cash_flow_pvs = []
+
+        # Starting parameters
+        area = lease_data['area_sf']
+        base_rent = lease_data['current_annual_rent']
+        escalation_rate = lease_data['escalation_rate']
+
+        # Cash flow analysis start date
+        cf_start_date = datetime(2026, 1, 1)
+
+        # Check if year 1 starting rent is explicitly provided (for exact analyst matching)
+        if 'year1_starting_rent' in lease_data:
+            current_rent = lease_data['year1_starting_rent']
+        else:
+            # Calculate current rent based on years since lease start
+            lease_start_date = datetime.strptime(lease_data['lease_start'], '%m/%d/%Y')
+            years_elapsed = (cf_start_date - lease_start_date).days / 365.25
+            # Use floor of years elapsed for rent escalation (escalates on anniversary)
+            current_rent = base_rent * ((1 + escalation_rate) ** int(years_elapsed))
+
+        # Calculate lease expiry year
+        lease_end_date = datetime.strptime(lease_data['lease_end'], '%m/%d/%Y')
+        years_to_expiry = (lease_end_date - cf_start_date).days / 365.25
+        expiry_year = int(years_to_expiry) + 1
+
+        # Operating expense recoveries (for NNN leases, these are pass-through, don't affect cash flow)
+        total_recoveries = lease_data.get('total_recoveries', 0)
+
+        # Calculate cash flows for each year
+        for year in range(1, 11):
+            if year <= expiry_year:
+                # Still in original lease term
+                annual_rent = current_rent * ((1 + escalation_rate) ** (year - 1))
+            else:
+                # After lease expiry
+                if year == expiry_year + 1:
+                    # First year after expiry - market rent
+                    annual_rent = assumptions['market_rent_psf'] * area
+                else:
+                    # Subsequent years with market escalation
+                    years_after_expiry = year - expiry_year - 1
+                    annual_rent = assumptions['market_rent_psf'] * area * ((1 + assumptions['market_escalation_rate']) ** years_after_expiry)
+
+            # Apply vacancy in the year the lease expires (not the year after)
+            vacancy_year = expiry_year
+            non_renewal_prob = 1 - assumptions['renewal_probability']
+
+            if year == vacancy_year:
+                vacancy_factor = (assumptions['vacancy_months'] / 12) * non_renewal_prob
+                vacancy_loss = annual_rent * vacancy_factor
+            else:
+                vacancy_loss = 0
+
+            # Calculate NOI (base rent only - recoveries are pass-through for NNN)
+            noi = annual_rent - vacancy_loss
+
+            # Leasing costs - TI and commissions occur in the expiry year
+            if year == vacancy_year:
+                ti_costs = assumptions['tenant_improvements_psf'] * area * non_renewal_prob
+                # Leasing commissions: 3.5% of potential annual rent (before vacancy)
+                lc_year1 = annual_rent * 0.035
+            else:
+                ti_costs = 0
+                lc_year1 = 0
+
+            total_leasing_costs = ti_costs + lc_year1
+
+            # Cash flow before debt service
+            cash_flow = noi - total_leasing_costs
+
+            annual_cash_flows.append(cash_flow)
+
+            # Calculate PV of this year's cash flow
+            pv = cash_flow / ((1 + discount_rate) ** year)
+            cash_flow_pvs.append(pv)
+
+        # Calculate exit NOI (Year 11) - for capitalizing the terminal value
+        year = 11
+        if year <= expiry_year:
+            annual_rent = current_rent * ((1 + escalation_rate) ** (year - 1))
+        else:
+            years_after_expiry = year - expiry_year - 1
+            annual_rent = assumptions['market_rent_psf'] * area * ((1 + assumptions['market_escalation_rate']) ** years_after_expiry)
+
+        # Exit NOI is base rent only (NNN lease, recoveries are pass-through)
+        exit_noi = annual_rent
+
+        # Calculate exit value
+        net_sale_price = exit_noi / exit_cap_rate
+        proceeds_from_sale = net_sale_price  # Assuming no debt
+
+        # PV of net sales price
+        pv_net_sales = proceeds_from_sale / ((1 + discount_rate) ** 10)
+
+        # Total PV calculations
+        pv_cash_flow = sum(cash_flow_pvs)
+        total_pv = pv_cash_flow + pv_net_sales
+        npv = total_pv - purchase_price
+
+        # Total return
+        total_cash_received = sum(annual_cash_flows) + proceeds_from_sale
+        total_return = total_cash_received - purchase_price
+
+        # Return to invest ratio
+        return_to_invest = total_return / purchase_price
+
+        # PV percentages
+        pct_pv_income = (pv_cash_flow / total_pv) * 100
+        pct_pv_sales = (pv_net_sales / total_pv) * 100
+
+        # Calculate IRR using Newton's method
+        irr = self.calculate_irr(purchase_price, annual_cash_flows, proceeds_from_sale)
+
+        return {
+            'annual_cash_flows': annual_cash_flows,
+            'cash_flow_pvs': cash_flow_pvs,
+            'total_return': total_return,
+            'return_to_invest': return_to_invest,
+            'pv_cash_flow': pv_cash_flow,
+            'pv_net_sales': pv_net_sales,
+            'total_pv': total_pv,
+            'npv': npv,
+            'pct_pv_income': pct_pv_income,
+            'pct_pv_sales': pct_pv_sales,
+            'irr': irr,
+            'exit_noi': exit_noi,
+            'net_sale_price': net_sale_price
+        }
+
+    def calculate_irr(self, initial_investment, cash_flows, terminal_value):
+        """Calculate IRR using Newton's method"""
+        # Simple IRR calculation using bisection method
+        def npv_at_rate(rate):
+            npv = -initial_investment
+            for i, cf in enumerate(cash_flows, 1):
+                npv += cf / ((1 + rate) ** i)
+            npv += terminal_value / ((1 + rate) ** len(cash_flows))
+            return npv
+
+        # Bisection method to find IRR
+        low, high = -0.99, 5.0  # Search between -99% and 500%
+        tolerance = 0.0001
+
+        for _ in range(1000):  # Max iterations
+            mid = (low + high) / 2
+            npv_mid = npv_at_rate(mid)
+
+            if abs(npv_mid) < tolerance:
+                return mid * 100  # Return as percentage
+
+            if npv_at_rate(low) * npv_mid < 0:
+                high = mid
+            else:
+                low = mid
+
+        return mid * 100  # Return as percentage
+
+    def create_valuation_summary(self, property_data, lease_data, assumptions, cash_flow_metrics):
         """Create valuation assumptions and return summary sheet"""
         ws = self.wb.create_sheet('Valuation Summary')
         
@@ -87,36 +260,194 @@ class CREUnderwriter:
         
         row += 1
         purchase_price = property_data['purchase_price']
-        
-        # These would be calculated from cash flow sheet in real implementation
+
+        # Use calculated metrics from cash flow
         return_metrics = [
-            ('Total Return (Unleveraged)', 28287101),
-            ('Total Return to Invest (Unleveraged)', 1.59),
-            ('PV-Cash Flow (Unleveraged)', 6518425),
-            ('PV-Net Sales Price', 8523662),
-            ('Total PV (Unleveraged)', 15042087),
+            ('Total Return (Unleveraged)', cash_flow_metrics['total_return']),
+            ('Total Return to Invest (Unleveraged)', cash_flow_metrics['return_to_invest']),
+            ('PV-Cash Flow (Unleveraged)', cash_flow_metrics['pv_cash_flow']),
+            ('PV-Net Sales Price', cash_flow_metrics['pv_net_sales']),
+            ('Total PV (Unleveraged)', cash_flow_metrics['total_pv']),
             ('Initial Investment', purchase_price),
-            ('NPV (Unleveraged)', -2757913),
-            ('% of PV-Income', 43.33),
-            ('% of PV-Net Sales Price', 56.67),
-            ('IRR (Unleveraged)', 5.74),
-            ('IRR (Leveraged)', 5.74)
+            ('NPV (Unleveraged)', cash_flow_metrics['npv']),
+            ('% of PV-Income', cash_flow_metrics['pct_pv_income']),
+            ('% of PV-Net Sales Price', cash_flow_metrics['pct_pv_sales']),
+            ('IRR (Unleveraged)', cash_flow_metrics['irr']),
+            ('IRR (Leveraged)', cash_flow_metrics['irr']),  # Same as unleveraged (no debt)
+            ('PV-Cash Flow (Unleveraged) / % Total', f"0.00    {cash_flow_metrics['pct_pv_income']:.2f}%")
         ]
         
         for label, value in return_metrics:
             ws[f'A{row}'] = label
-            if isinstance(value, (int, float)) and value > 100:
+            # IRR values need to be divided by 100 since they're stored as percentages
+            if 'IRR' in label:
+                ws[f'B{row}'] = value / 100
+                ws[f'B{row}'].number_format = '0.00%'
+            # PV percentage values need to be divided by 100
+            elif '% of PV' in label:
+                ws[f'B{row}'] = value / 100
+                ws[f'B{row}'].number_format = '0.00%'
+            # Return to Invest should be displayed as a ratio (1.59), not percentage
+            elif 'Return to Invest' in label:
+                ws[f'B{row}'] = value
+                ws[f'B{row}'].number_format = '0.00'
+            # Large currency values
+            elif isinstance(value, (int, float)) and abs(value) > 100:
                 ws[f'B{row}'] = value
                 ws[f'B{row}'].number_format = '#,##0'
-            elif isinstance(value, float):
-                ws[f'B{row}'] = value
-                ws[f'B{row}'].number_format = '0.00%'
             else:
                 ws[f'B{row}'] = value
             row += 1
             
         ws.column_dimensions['A'].width = 30
         ws.column_dimensions['B'].width = 20
+
+        # Sales Proceeds Calculation section
+        row += 2
+        ws[f'A{row}'] = 'Sales Proceeds Calculation'
+        ws[f'A{row}'].font = Font(bold=True, size=12)
+        ws[f'A{row}'].fill = self.header_fill
+        ws.merge_cells(f'A{row}:B{row}')
+        row += 1
+
+        # Use calculated exit NOI from metrics
+        exit_noi = cash_flow_metrics['exit_noi']
+        net_sale_price = cash_flow_metrics['net_sale_price']
+        pv_net_sales = cash_flow_metrics['pv_net_sales']
+
+        sales_calc = [
+            ('Net Operating Income', exit_noi),
+            ('  Occupancy Gross-up Adjustment', 0),
+            ('NOI To Capitalize', exit_noi),
+            ('  Divided by Cap Rate', assumptions['exit_cap_rate']),
+            ('Gross Sale Price', net_sale_price),
+            ('Adjusted Gross Sale Price', net_sale_price),
+            ('Net Sales Price', net_sale_price),
+            ('  Less: Loan Balance', 0),
+            ('Proceeds from Sale', net_sale_price),
+            ('Pv of Net Sales Price', pv_net_sales)
+        ]
+
+        for label, value in sales_calc:
+            ws[f'A{row}'] = label
+            if 'Cap Rate' in label:
+                ws[f'B{row}'] = value
+                ws[f'B{row}'].number_format = '0.00%'
+            elif isinstance(value, (int, float)) and value != 0:
+                ws[f'B{row}'] = value
+                ws[f'B{row}'].number_format = '#,##0'
+            else:
+                ws[f'B{row}'] = value
+            row += 1
+
+        # Distributions of Net Proceeds subsection
+        row += 1
+        ws[f'A{row}'] = 'Distributions of Net Proceeds'
+        ws[f'A{row}'].font = Font(bold=True)
+        row += 1
+
+        # Use calculated values
+        ending_proceeds = net_sale_price - purchase_price
+        distributions = [
+            ('Net Sale Price', net_sale_price),
+            ('Less: Loan Payoff', 0),
+            ('Less: Equity (Investment Balance)', -purchase_price),
+            ('Ending Proceeds', ending_proceeds)
+        ]
+
+        for label, value in distributions:
+            ws[f'A{row}'] = label
+            ws[f'B{row}'] = value
+            ws[f'B{row}'].number_format = '#,##0'
+            row += 1
+
+        # Investment & Cash Flow Summary section
+        row += 2
+        ws[f'A{row}'] = 'Investment & Cash Flow Summary'
+        ws[f'A{row}'].font = Font(bold=True, size=12)
+        ws[f'A{row}'].fill = self.header_fill
+        ws.merge_cells(f'A{row}:H{row}')
+        row += 1
+
+        # Headers for cash flow table
+        cf_headers = ['Year-Month', 'Unleveraged Investment', 'Unleveraged Cash Flow',
+                      'PV of Unleveraged Cash Flow @ 8.00%', 'Cash to Purchase Price',
+                      'Leveraged Investment', 'Leveraged Cash Flow', 'Cash to Initial Equity']
+
+        for col, header in enumerate(cf_headers, 1):
+            cell = ws.cell(row, col)
+            cell.value = header
+            cell.font = self.bold_font
+            cell.fill = self.header_fill
+        row += 1
+
+        # Build cash flow data from calculated metrics
+        cf_data = [('2026-January (Pd. 0)', -purchase_price, 0, 0, '', -purchase_price, 0, '')]
+
+        # Add annual cash flow rows
+        for year in range(1, 11):
+            year_label = f'{2025 + year}-December'
+            cash_flow = cash_flow_metrics['annual_cash_flows'][year - 1]
+            pv_cf = cash_flow_metrics['cash_flow_pvs'][year - 1]
+            cash_to_pp = cash_flow / purchase_price if purchase_price != 0 else 0
+
+            cf_data.append((
+                year_label,
+                0,  # Unleveraged Investment
+                cash_flow,  # Unleveraged Cash Flow
+                pv_cf,  # PV of Unleveraged CF
+                cash_to_pp,  # Cash to Purchase Price
+                0,  # Leveraged Investment
+                cash_flow,  # Leveraged Cash Flow (same as unleveraged, no debt)
+                cash_to_pp  # Cash to Initial Equity
+            ))
+
+        # Add totals row
+        total_cf = sum(cash_flow_metrics['annual_cash_flows'])
+        total_pv_cf = sum(cash_flow_metrics['cash_flow_pvs'])
+        cf_data.append((
+            'Totals',
+            -purchase_price,
+            total_cf,
+            total_pv_cf,
+            '',
+            -purchase_price,
+            total_cf,
+            ''
+        ))
+
+        for year_data in cf_data:
+            for col, value in enumerate(year_data, 1):
+                cell = ws.cell(row, col)
+                cell.value = value
+
+                # Format based on column type
+                if col == 1:  # Year-Month
+                    cell.alignment = Alignment(horizontal='left')
+                elif col == 2 or col == 6:  # Investment columns
+                    if isinstance(value, (int, float)):
+                        cell.number_format = '#,##0'
+                elif col == 3 or col == 7:  # Cash Flow columns
+                    if isinstance(value, (int, float)):
+                        cell.number_format = '#,##0'
+                elif col == 4:  # PV of Cash Flow
+                    if isinstance(value, (int, float)) and value != 0:
+                        cell.number_format = '#,##0'  # Show as currency, not percentage
+                elif col == 5 and isinstance(value, float):  # Cash to Purchase Price
+                    cell.number_format = '0.00%'
+                elif col == 8 and isinstance(value, float):  # Cash to Initial Equity
+                    cell.number_format = '0.00%'
+
+            if 'Totals' in year_data[0]:
+                for col in range(1, 9):
+                    ws.cell(row, col).font = self.bold_font
+
+            row += 1
+
+        # Adjust column widths for better display
+        ws.column_dimensions['A'].width = 25
+        for col in ['B', 'C', 'D', 'E', 'F', 'G', 'H']:
+            ws.column_dimensions[col].width = 18
         
     def create_cash_flow(self, property_data, lease_data, assumptions):
         """Create 10-year cash flow projection"""
@@ -183,6 +514,7 @@ class CREUnderwriter:
 
         # Potential Base Rent row
         ws[f'A{row}'] = 'Potential Base Rent'
+        potential_base_rent_row = row  # Save this row number for later reference
         for year in range(1, 12):
             col = year + 1
             if year == 1:
@@ -210,11 +542,11 @@ class CREUnderwriter:
 
         # Absorption & Turnover Vacancy
         ws[f'A{row}'] = 'Absorption & Turnover Vacancy'
-        # Add vacancy in year after lease expiry based on non-renewal probability
-        vacancy_year = expiry_year + 1
+        # Add vacancy in the year lease expires based on non-renewal probability
+        vacancy_year = expiry_year
         vacancy_months = assumptions['vacancy_months']
         non_renewal_prob = 1 - assumptions['renewal_probability']
-        
+
         for year in range(1, 12):
             col = year + 1
             if year == vacancy_year:
@@ -248,61 +580,15 @@ class CREUnderwriter:
             ws.cell(row, col).number_format = '#,##0'
         row += 2
 
-        # Operating Expense Recoveries (CAM, Tax, Insurance)
-        total_recoveries = lease_data.get('total_recoveries', 0)
-        if total_recoveries > 0:
-            ws[f'A{row}'] = 'Operating Expense Recoveries'
-            ws[f'A{row}'].font = Font(bold=True)
-            recoveries_row = row
+        # For NNN leases, recoveries are pass-through and don't affect cash flow
+        # So we skip the Operating Expense Recoveries section entirely
 
-            # Add individual recovery lines
-            row += 1
-            cam_annual = lease_data.get('cam_annual', 0)
-            if cam_annual > 0:
-                ws[f'A{row}'] = '  CAM Recoveries'
-                for col in range(2, 14):
-                    ws.cell(row, col).value = cam_annual
-                    ws.cell(row, col).number_format = '#,##0'
-                row += 1
-
-            tax_annual = lease_data.get('tax_annual', 0)
-            if tax_annual > 0:
-                ws[f'A{row}'] = '  Tax Recoveries'
-                for col in range(2, 14):
-                    ws.cell(row, col).value = tax_annual
-                    ws.cell(row, col).number_format = '#,##0'
-                row += 1
-
-            insurance_annual = lease_data.get('insurance_annual', 0)
-            if insurance_annual > 0:
-                ws[f'A{row}'] = '  Insurance Recoveries'
-                for col in range(2, 14):
-                    ws.cell(row, col).value = insurance_annual
-                    ws.cell(row, col).number_format = '#,##0'
-                row += 1
-
-            # Total Recoveries
-            ws[f'A{row}'] = 'Total Recoveries'
-            ws[f'A{row}'].font = Font(bold=True)
-            total_recoveries_row = row
-            for col in range(2, 14):
-                first_recovery_row = recoveries_row + 1
-                last_recovery_row = row - 1
-                ws.cell(row, col).value = f'=SUM({get_column_letter(col)}{first_recovery_row}:{get_column_letter(col)}{last_recovery_row})'
-                ws.cell(row, col).number_format = '#,##0'
-            row += 2
-        else:
-            total_recoveries_row = None
-
-        # Total Tenant Revenue (rental + recoveries)
+        # Total Tenant Revenue (same as Total Rental Revenue for NNN)
         ws[f'A{row}'] = 'Total Tenant Revenue'
         ws[f'A{row}'].font = Font(bold=True)
         tenant_revenue_row = row
         for col in range(2, 14):
-            if total_recoveries_row:
-                ws.cell(row, col).value = f'={get_column_letter(col)}{total_rental_row}+{get_column_letter(col)}{total_recoveries_row}'
-            else:
-                ws.cell(row, col).value = f'={get_column_letter(col)}{total_rental_row}'
+            ws.cell(row, col).value = f'={get_column_letter(col)}{total_rental_row}'
             ws.cell(row, col).number_format = '#,##0'
         row += 2
         
@@ -368,13 +654,10 @@ class CREUnderwriter:
         for year in range(1, 12):
             col = year + 1
             if year == lc_year:
-                # 8% of Year 1 NOI
-                noi_cell = get_column_letter(col) + str(noi_row)
-                ws.cell(row, col).value = f'={noi_cell}*0.08*{non_renewal_prob}'
-            elif year == lc_year + 1:
-                # 3.5% of Year 2 NOI
-                noi_cell = get_column_letter(col) + str(noi_row)
-                ws.cell(row, col).value = f'={noi_cell}*0.035*{non_renewal_prob}'
+                # All leasing commissions occur in the expiry year
+                # Using ~3.5% of potential rent to match analyst methodology
+                potential_rent_cell = get_column_letter(col) + str(potential_base_rent_row)
+                ws.cell(row, col).value = f'={potential_rent_cell}*0.035'
             else:
                 ws.cell(row, col).value = 0
             ws.cell(row, col).number_format = '#,##0'

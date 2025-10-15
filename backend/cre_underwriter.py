@@ -166,36 +166,52 @@ class CREUnderwriter:
         escalation_rate = lease_data['escalation_rate']
         lease_end_year = lease_data['lease_term_years']
         area = lease_data['area_sf']
-        
+
+        # Calculate current rent based on years since lease start
+        # Cash flow analysis starts in January 2026
+        lease_start_date = datetime.strptime(lease_data['lease_start'], '%m/%d/%Y')
+        cf_start_date = datetime(2026, 1, 1)
+        years_elapsed = (cf_start_date - lease_start_date).days / 365.25
+
+        # Apply escalations for years already passed
+        current_rent = base_rent * ((1 + escalation_rate) ** int(years_elapsed))
+
+        # Calculate which year of cash flow the lease expires
+        lease_end_date = datetime.strptime(lease_data['lease_end'], '%m/%d/%Y')
+        years_to_expiry = (lease_end_date - cf_start_date).days / 365.25
+        expiry_year = int(years_to_expiry) + 1  # Cash flow year when lease expires
+
         # Potential Base Rent row
         ws[f'A{row}'] = 'Potential Base Rent'
         for year in range(1, 12):
             col = year + 1
             if year == 1:
-                ws.cell(row, col).value = base_rent
+                ws.cell(row, col).value = current_rent
             else:
                 # Reference previous year and escalate
                 prev_cell = get_column_letter(col - 1) + str(row)
-                if year <= lease_end_year:
+                if year <= expiry_year:
+                    # Still in original lease term
                     ws.cell(row, col).value = f'={prev_cell}*(1+{escalation_rate})'
                 else:
                     # After lease expiry, use market rent with different escalation
-                    if year == lease_end_year + 1:
+                    if year == expiry_year + 1:
+                        # First year after expiry - use market rent
                         market_rent = assumptions['market_rent_psf'] * area
                         ws.cell(row, col).value = market_rent
                     else:
                         ws.cell(row, col).value = f'={prev_cell}*(1+{assumptions["market_escalation_rate"]})'
             ws.cell(row, col).number_format = '#,##0'
-            
+
         # Total column
         ws.cell(row, 13).value = f'=SUM(B{row}:L{row})'
         ws.cell(row, 13).number_format = '#,##0'
         row += 1
-        
+
         # Absorption & Turnover Vacancy
         ws[f'A{row}'] = 'Absorption & Turnover Vacancy'
-        # Add vacancy in year 7 (upon lease expiry) based on non-renewal probability
-        vacancy_year = lease_end_year + 1
+        # Add vacancy in year after lease expiry based on non-renewal probability
+        vacancy_year = expiry_year + 1
         vacancy_months = assumptions['vacancy_months']
         non_renewal_prob = 1 - assumptions['renewal_probability']
         

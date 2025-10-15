@@ -1,0 +1,15 @@
+{
+  "property_address": "120 Valleywood Drive, Markham",
+  "tenant": "Sentrex Health Solutions Inc.",
+  "area_sf": 60071,
+  "current_rent_psf": 14.21,
+  "lease_start": "3/1/2022",
+  "lease_end": "2/29/2032",
+  "annual_escalation": 3.0,
+  "purchase_price": 17800000,
+  "renewal_probability": 85,
+  "market_rent_psf": 17.50,
+  "market_escalation": 3.5,
+  "vacancy_months": 8,
+  "ti_psf": 5.0
+}

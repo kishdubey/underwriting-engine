@@ -1,6 +1,6 @@
-# CRE Underwriting Automation
+# CRE Underwriting Engine
 
-Automates commercial real estate underwriting - generates 10-year Excel cash flow models in seconds instead of days.
+Automated commercial real estate underwriting that generates 10-year Excel cash flow models in 10 seconds instead of 5 days.
 
 ## Quick Start
 
@@ -13,64 +13,90 @@ pip install -r backend/requirements.txt
 # 2. Start API
 cd backend
 python api.py
-# Runs at http://localhost:5001
+# API runs at http://localhost:5001
 
-# 3. Use web interface
-# Open frontend/underwriting_interface.html in browser
+# 3. Use Web Interface
+Open frontend/underwriting_interface.html in your browser
 ```
 
-## API Usage
+## Features
 
-**Endpoint:** `POST /underwrite`
+- **10-second generation** - Instant vs 5-day manual process
+- **Dynamic Excel formulas** - Not static templates
+- **Complete financial modeling** - Cash flows, IRR, NPV, yields
+- **Probability-weighted scenarios** - Lease expiry risk modeling
+- **REST API + Web UI** - Easy integration
+- **Production-ready** - For single-tenant properties
+
+## API Usage
 
 ```bash
 curl -X POST http://localhost:5001/underwrite \
   -H "Content-Type: application/json" \
-  -d '{
-    "property_address": "120 Valleywood Drive",
-    "tenant": "Sentrex Health Solutions Inc.",
-    "area_sf": 60071,
-    "current_rent_psf": 14.21,
-    "lease_start": "3/1/2022",
-    "lease_end": "2/29/2032",
-    "annual_escalation": 3.0,
-    "purchase_price": 17800000,
-    "renewal_probability": 85,
-    "market_rent_psf": 17.50,
-    "market_escalation": 3.5,
-    "vacancy_months": 8,
-    "ti_psf": 5.0
-  }' \
+  -d @examples/sample_request.json \
   --output underwriting.xlsx
 ```
 
-## What It Does
-
-- **Calculates** 10-year cash flow projections with rent escalations
-- **Models** lease expiry scenarios (renewal probability)
-- **Generates** Excel file with formulas (not static values!)
-- **Includes** 4 worksheets:
-  - Cash Flow (10-year projections)
-  - Valuation Summary (IRR, NPV)
-  - Rent Schedule (all escalations)
-  - Market Leasing Assumptions
+**Generates Excel with:**
+- Cash Flow (10-year projections)
+- Valuation Summary (IRR, NPV, yields)
+- Rent Schedule (all escalations)
+- Market Leasing Assumptions
 
 ## Project Structure
 
 ```
+underwriting_mvp/
 ├── backend/
-│   ├── api.py              # Flask API (1 endpoint)
-│   ├── cre_underwriter.py  # Financial engine
-│   └── requirements.txt
+│   ├── api.py                  # Flask REST API
+│   ├── cre_underwriter.py      # Financial engine
+│   └── requirements.txt        # Python dependencies
 ├── frontend/
 │   └── underwriting_interface.html  # Web UI
-├── tests/                  # Test files
-├── outputs/                # Generated Excel files
-└── docs/                   # Documentation
+├── tests/
+│   ├── test_api.py            # API tests
+│   └── test_underwriter.py    # Engine tests
+├── examples/
+│   └── sample_request.json    # Example API request
+├── outputs/                   # Generated Excel files
+└── Documentation (see below)
 ```
 
-## Everything is Dynamic
+See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for complete file layout.
 
-No templates! Every calculation uses your inputs. Change any parameter → all formulas recalculate.
+## How It Works
 
-See [PROOF_ITS_DYNAMIC.md](PROOF_ITS_DYNAMIC.md) for technical details.
+1. **Input:** Property details, lease terms, market assumptions
+2. **Engine:** Calculates 10-year cash flow with formulas
+3. **Output:** Professional Excel file with 4 worksheets
+
+**Key Calculation:** Cash flow starts with current rent (after applying escalations from lease start to analysis start date), not original base rent.
+
+## Documentation
+
+- **[QUICKSTART.md](QUICKSTART.md)** - 3-step setup guide
+- **[CALCULATIONS_REFERENCE.md](CALCULATIONS_REFERENCE.md)** - Every formula explained
+- **[HOW_IT_WORKS.md](HOW_IT_WORKS.md)** - Financial engine details
+- **[EMAIL_TO_API_MAPPING.md](EMAIL_TO_API_MAPPING.md)** - Input field mapping
+- **[PROOF_ITS_DYNAMIC.md](PROOF_ITS_DYNAMIC.md)** - Validation tests
+- **[BUG_FIX_SUMMARY.md](BUG_FIX_SUMMARY.md)** - Recent bug fixes
+
+## Testing
+
+```bash
+# Test the engine
+python tests/test_underwriter.py
+
+# Test the API (requires API running)
+python tests/test_api.py
+```
+
+## What Makes This Different
+
+**No templates!** Every number is calculated from your inputs using Excel formulas. Change any parameter → everything recalculates.
+
+See [PROOF_ITS_DYNAMIC.md](PROOF_ITS_DYNAMIC.md) for technical validation.
+
+---
+
+Built for brokerages, PE firms, and REITs who need fast, accurate underwriting at scale.

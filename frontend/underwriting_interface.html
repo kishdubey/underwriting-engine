@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CRE Underwriting - Instant Analysis</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        
+        .comparison {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            padding: 30px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .comparison-box {
+            padding: 20px;
+            border-radius: 8px;
+            background: white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .comparison-box h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 16px;
+        }
+        
+        .comparison-box.old {
+            border-left: 4px solid #dc3545;
+        }
+        
+        .comparison-box.new {
+            border-left: 4px solid #28a745;
+        }
+        
+        .comparison-box ul {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .comparison-box li {
+            padding: 8px 0;
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .comparison-box li:before {
+            content: "• ";
+            color: inherit;
+            font-weight: bold;
+            margin-right: 8px;
+        }
+        
+        .form-container {
+            padding: 30px;
+        }
+        
+        .form-section {
+            margin-bottom: 30px;
+        }
+        
+        .form-section h2 {
+            color: #333;
+            font-size: 18px;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+        
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .form-group.full-width {
+            grid-column: 1 / -1;
+        }
+        
+        label {
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #555;
+            font-size: 14px;
+        }
+        
+        input, select {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .submit-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 40px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 20px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .submit-btn:active {
+            transform: translateY(0);
+        }
+        
+        .submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .result {
+            margin-top: 20px;
+            padding: 20px;
+            background: #e8f5e9;
+            border-left: 4px solid #28a745;
+            border-radius: 6px;
+            display: none;
+        }
+        
+        .result.show {
+            display: block;
+        }
+        
+        .result h3 {
+            color: #28a745;
+            margin-bottom: 10px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+            font-weight: 600;
+            display: none;
+        }
+        
+        .loading.show {
+            display: block;
+        }
+        
+        .help-text {
+            font-size: 12px;
+            color: #888;
+            margin-top: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏢 CRE Underwriting Assistant</h1>
+            <p>Get your 10-year cash flow analysis in seconds, not days</p>
+        </div>
+        
+        <div class="comparison">
+            <div class="comparison-box old">
+                <h3>❌ The Old Way</h3>
+                <ul>
+                    <li>Email analyst with details</li>
+                    <li>Wait 5+ days for response</li>
+                    <li>Back and forth on revisions</li>
+                    <li>Expensive analyst time</li>
+                    <li>Can't explore scenarios</li>
+                </ul>
+            </div>
+            <div class="comparison-box new">
+                <h3>✅ The New Way</h3>
+                <ul>
+                    <li>Fill out simple form</li>
+                    <li>Get results in 10 seconds</li>
+                    <li>Instant scenario testing</li>
+                    <li>Free up analyst time</li>
+                    <li>Professional Excel output</li>
+                </ul>
+            </div>
+        </div>
+        
+        <form id="underwritingForm" class="form-container">
+            <div class="form-section">
+                <h2>Property Details</h2>
+                <div class="form-grid">
+                    <div class="form-group full-width">
+                        <label for="property_address">Property Address</label>
+                        <input type="text" id="property_address" name="property_address" 
+                               value="120 Valleywood Drive, Markham" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="purchase_price">Purchase Price ($)</label>
+                        <input type="number" id="purchase_price" name="purchase_price" 
+                               value="17800000" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="property_type">Property Type</label>
+                        <select id="property_type" name="property_type">
+                            <option value="Industrial" selected>Industrial</option>
+                            <option value="Office">Office</option>
+                            <option value="Retail">Retail</option>
+                            <option value="Mixed Use">Mixed Use</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="form-section">
+                <h2>Current Lease Details</h2>
+                <div class="form-grid">
+                    <div class="form-group full-width">
+                        <label for="tenant">Tenant Name</label>
+                        <input type="text" id="tenant" name="tenant" 
+                               value="Sentrex Health Solutions Inc." required>
+                    </div>
+                    <div class="form-group">
+                        <label for="area_sf">Area (SF)</label>
+                        <input type="number" id="area_sf" name="area_sf" 
+                               value="60071" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="current_rent_psf">Current Net Rent ($/SF/Year)</label>
+                        <input type="number" step="0.01" id="current_rent_psf" name="current_rent_psf" 
+                               value="14.21" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="lease_start">Lease Start Date</label>
+                        <input type="date" id="lease_start" name="lease_start" 
+                               value="2022-03-01" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="lease_end">Lease End Date</label>
+                        <input type="date" id="lease_end" name="lease_end" 
+                               value="2032-02-29" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="annual_escalation">Annual Escalation (%)</label>
+                        <input type="number" step="0.01" id="annual_escalation" name="annual_escalation" 
+                               value="3.00" required>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="form-section">
+                <h2>Market Assumptions (Upon Lease Expiry)</h2>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="renewal_probability">Renewal Probability (%)</label>
+                        <input type="number" step="1" id="renewal_probability" name="renewal_probability" 
+                               value="85" required>
+                        <span class="help-text">Likelihood tenant renews (85% = 15% vacancy risk)</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="market_rent_psf">Market Rent ($/SF/Year)</label>
+                        <input type="number" step="0.01" id="market_rent_psf" name="market_rent_psf" 
+                               value="17.50" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="market_escalation">Market Escalation (%)</label>
+                        <input type="number" step="0.01" id="market_escalation" name="market_escalation" 
+                               value="3.50" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="vacancy_months">Downtime if Vacant (Months)</label>
+                        <input type="number" id="vacancy_months" name="vacancy_months" 
+                               value="8" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="ti_psf">Tenant Improvements ($/SF)</label>
+                        <input type="number" step="0.01" id="ti_psf" name="ti_psf" 
+                               value="5.00" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="exit_cap_rate">Exit Cap Rate (%)</label>
+                        <input type="number" step="0.01" id="exit_cap_rate" name="exit_cap_rate" 
+                               value="6.50" required>
+                    </div>
+                </div>
+            </div>
+            
+            <button type="submit" class="submit-btn">Generate Underwriting Package</button>
+            
+            <div class="loading" id="loading">
+                <p>⏳ Generating your underwriting analysis...</p>
+            </div>
+            
+            <div class="result" id="result">
+                <h3>✅ Success!</h3>
+                <p>Your underwriting package has been generated and downloaded.</p>
+                <p style="margin-top: 10px; font-size: 14px;">The Excel file includes:</p>
+                <ul style="margin-left: 20px; margin-top: 10px;">
+                    <li>10-year cash flow projection</li>
+                    <li>Valuation summary with IRR & NPV</li>
+                    <li>Detailed rent schedule</li>
+                    <li>Market leasing assumptions</li>
+                </ul>
+            </div>
+        </form>
+    </div>
+    
+    <script>
+        document.getElementById('underwritingForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const data = {};
+            
+            for (let [key, value] of formData.entries()) {
+                data[key] = value;
+            }
+            
+            // Convert date format
+            data.lease_start = new Date(data.lease_start).toLocaleDateString('en-US');
+            data.lease_end = new Date(data.lease_end).toLocaleDateString('en-US');
+            
+            // Convert to numbers
+            ['purchase_price', 'area_sf', 'current_rent_psf', 'annual_escalation', 
+             'renewal_probability', 'market_rent_psf', 'market_escalation', 
+             'vacancy_months', 'ti_psf', 'exit_cap_rate'].forEach(field => {
+                data[field] = parseFloat(data[field]);
+            });
+            
+            // Show loading
+            document.getElementById('loading').classList.add('show');
+            document.getElementById('result').classList.remove('show');
+            document.querySelector('.submit-btn').disabled = true;
+            
+            try {
+                const response = await fetch('http://localhost:5001/underwrite', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `underwriting_${data.property_address.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    
+                    document.getElementById('result').classList.add('show');
+                } else {
+                    alert('Error generating underwriting. Please check your inputs.');
+                }
+            } catch (error) {
+                alert('Error connecting to server: ' + error.message);
+            } finally {
+                document.getElementById('loading').classList.remove('show');
+                document.querySelector('.submit-btn').disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>

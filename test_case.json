@@ -1,0 +1,15 @@
+{
+  "property_address": "456 Industrial Park Dr",
+  "tenant": "ABC Manufacturing Inc",
+  "area_sf": 50000,
+  "current_rent_psf": 20.00,
+  "lease_start": "1/1/2023",
+  "lease_end": "12/31/2032",
+  "annual_escalation": 2.5,
+  "purchase_price": 15000000,
+  "renewal_probability": 80,
+  "market_rent_psf": 24.00,
+  "market_escalation": 3.0,
+  "vacancy_months": 9,
+  "ti_psf": 8.00
+}

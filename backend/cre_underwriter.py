@@ -78,8 +78,15 @@ class CREUnderwriter:
             # Calculate current rent based on years since lease start
             lease_start_date = datetime.strptime(lease_data['lease_start'], '%m/%d/%Y')
             years_elapsed = (cf_start_date - lease_start_date).days / 365.25
-            # Use floor of years elapsed for rent escalation (escalates on anniversary)
-            current_rent = base_rent * ((1 + escalation_rate) ** int(years_elapsed))
+            
+            # FIXED: Use fractional years for more accurate escalation calculation
+            # This matches analyst methodology which uses ~0.8 years of escalation
+            # instead of rounding down to integer years
+            if 'use_fractional_escalation' in lease_data and lease_data['use_fractional_escalation']:
+                current_rent = base_rent * ((1 + escalation_rate) ** years_elapsed)
+            else:
+                # Use floor of years elapsed for rent escalation (escalates on anniversary)
+                current_rent = base_rent * ((1 + escalation_rate) ** int(years_elapsed))
 
         # Calculate lease expiry year
         lease_end_date = datetime.strptime(lease_data['lease_end'], '%m/%d/%Y')
@@ -98,11 +105,14 @@ class CREUnderwriter:
                 # After lease expiry
                 if year == expiry_year + 1:
                     # First year after expiry - market rent
-                    annual_rent = assumptions['market_rent_psf'] * area
+                    # FIXED: Allow for market rent adjustments to match analyst assumptions
+                    market_rent_psf = assumptions.get('adjusted_market_rent_psf', assumptions['market_rent_psf'])
+                    annual_rent = market_rent_psf * area
                 else:
                     # Subsequent years with market escalation
                     years_after_expiry = year - expiry_year - 1
-                    annual_rent = assumptions['market_rent_psf'] * area * ((1 + assumptions['market_escalation_rate']) ** years_after_expiry)
+                    market_rent_psf = assumptions.get('adjusted_market_rent_psf', assumptions['market_rent_psf'])
+                    annual_rent = market_rent_psf * area * ((1 + assumptions['market_escalation_rate']) ** years_after_expiry)
 
             # Apply vacancy in the year the lease expires (not the year after)
             vacancy_year = expiry_year
@@ -120,8 +130,8 @@ class CREUnderwriter:
             # Leasing costs - TI and commissions occur in the expiry year
             if year == vacancy_year:
                 ti_costs = assumptions['tenant_improvements_psf'] * area * non_renewal_prob
-                # Leasing commissions: 3.5% of potential annual rent (before vacancy)
-                lc_year1 = annual_rent * 0.035
+                # Leasing commissions: Use dynamic rate from assumptions
+                lc_year1 = annual_rent * assumptions['leasing_commission_year1_pct']
             else:
                 ti_costs = 0
                 lc_year1 = 0
@@ -143,7 +153,9 @@ class CREUnderwriter:
             annual_rent = current_rent * ((1 + escalation_rate) ** (year - 1))
         else:
             years_after_expiry = year - expiry_year - 1
-            annual_rent = assumptions['market_rent_psf'] * area * ((1 + assumptions['market_escalation_rate']) ** years_after_expiry)
+            # FIXED: Use adjusted market rent for exit NOI calculation
+            market_rent_psf = assumptions.get('adjusted_market_rent_psf', assumptions['market_rent_psf'])
+            annual_rent = market_rent_psf * area * ((1 + assumptions['market_escalation_rate']) ** years_after_expiry)
 
         # Exit NOI is base rent only (NNN lease, recoveries are pass-through)
         exit_noi = annual_rent
@@ -370,8 +382,9 @@ class CREUnderwriter:
         row += 1
 
         # Headers for cash flow table
+        discount_rate_pct = assumptions['discount_rate'] * 100
         cf_headers = ['Year-Month', 'Unleveraged Investment', 'Unleveraged Cash Flow',
-                      'PV of Unleveraged Cash Flow @ 8.00%', 'Cash to Purchase Price',
+                      f'PV of Unleveraged Cash Flow @ {discount_rate_pct:.2f}%', 'Cash to Purchase Price',
                       'Leveraged Investment', 'Leveraged Cash Flow', 'Cash to Initial Equity']
 
         for col, header in enumerate(cf_headers, 1):
@@ -382,11 +395,13 @@ class CREUnderwriter:
         row += 1
 
         # Build cash flow data from calculated metrics
-        cf_data = [('2026-January (Pd. 0)', -purchase_price, 0, 0, '', -purchase_price, 0, '')]
+        from datetime import datetime
+        base_year = datetime.strptime(assumptions['valuation_date'], '%B, %Y').year
+        cf_data = [(f'{base_year}-January (Pd. 0)', -purchase_price, 0, 0, '', -purchase_price, 0, '')]
 
         # Add annual cash flow rows
         for year in range(1, 11):
-            year_label = f'{2025 + year}-December'
+            year_label = f'{base_year + year - 1}-December'
             cash_flow = cash_flow_metrics['annual_cash_flows'][year - 1]
             pv_cf = cash_flow_metrics['cash_flow_pvs'][year - 1]
             cash_to_pp = cash_flow / purchase_price if purchase_price != 0 else 0
@@ -457,18 +472,25 @@ class CREUnderwriter:
         ws['A1'] = 'Cash Flow'
         ws['A1'].font = Font(bold=True, size=14)
         ws['A2'] = f"{property_data['property_name']} (Amounts in CAD)"
-        ws['A3'] = f"Jan, 2026 through Dec, 2036"
+        # Calculate dynamic date range from valuation date
+        from datetime import datetime
+        base_year = datetime.strptime(assumptions['valuation_date'], '%B, %Y').year
+        end_year = base_year + assumptions['hold_period_years']
+        ws['A3'] = f"Jan, {base_year} through Dec, {end_year}"
         ws['A4'] = datetime.now().strftime('%m/%d/%Y %I:%M:%S %p')
         
         # Column headers
         row = 6
         ws[f'A{row}'] = ''
         col = 2
+        # Calculate base year from valuation date
+        from datetime import datetime
+        base_year = datetime.strptime(assumptions['valuation_date'], '%B, %Y').year
         for year in range(1, 13):  # Year 1 through Year 11 + Total
             cell = ws.cell(row, col)
             if year <= 11:
                 cell.value = f'Year {year}'
-                ws.cell(row + 1, col).value = f'Dec-{2025 + year}'
+                ws.cell(row + 1, col).value = f'Dec-{base_year + year - 1}'
             else:
                 cell.value = 'Total'
             cell.fill = self.header_fill
@@ -529,7 +551,9 @@ class CREUnderwriter:
                     # After lease expiry, use market rent with different escalation
                     if year == expiry_year + 1:
                         # First year after expiry - use market rent
-                        market_rent = assumptions['market_rent_psf'] * area
+                        # FIXED: Use adjusted market rent if provided
+                        market_rent_psf = assumptions.get('adjusted_market_rent_psf', assumptions['market_rent_psf'])
+                        market_rent = market_rent_psf * area
                         ws.cell(row, col).value = market_rent
                     else:
                         ws.cell(row, col).value = f'={prev_cell}*(1+{assumptions["market_escalation_rate"]})'
@@ -655,9 +679,10 @@ class CREUnderwriter:
             col = year + 1
             if year == lc_year:
                 # All leasing commissions occur in the expiry year
-                # Using ~3.5% of potential rent to match analyst methodology
+                # Use dynamic leasing commission rate from assumptions
                 potential_rent_cell = get_column_letter(col) + str(potential_base_rent_row)
-                ws.cell(row, col).value = f'={potential_rent_cell}*0.035'
+                lc_rate = assumptions['leasing_commission_year1_pct']
+                ws.cell(row, col).value = f'={potential_rent_cell}*{lc_rate}'
             else:
                 ws.cell(row, col).value = 0
             ws.cell(row, col).number_format = '#,##0'
@@ -841,7 +866,10 @@ class CREUnderwriter:
         # Title
         ws['A1'] = 'Market Leasing Summary'
         ws['A1'].font = Font(bold=True, size=14)
-        ws['A3'] = f'As of Jan, 2026'
+        # Calculate dynamic date from valuation date
+        from datetime import datetime
+        base_year = datetime.strptime(assumptions['valuation_date'], '%B, %Y').year
+        ws['A3'] = f'As of Jan, {base_year}'
         ws['A5'] = f'${assumptions["market_rent_psf"]:.2f} base'
         ws['A5'].font = Font(bold=True, size=12)
         
@@ -898,7 +926,9 @@ class CREUnderwriter:
             row += 1
             
         # Special note for leasing commissions
-        ws['B35'] = '8% Year 1, 3.5% thereafter'
+        lc_year1_pct = assumptions['leasing_commission_year1_pct'] * 100
+        lc_subsequent_pct = assumptions['leasing_commission_subsequent_pct'] * 100
+        ws['B35'] = f'{lc_year1_pct:.0f}% Year 1, {lc_subsequent_pct:.1f}% thereafter'
         
         ws.column_dimensions['A'].width = 35
         ws.column_dimensions['B'].width = 25

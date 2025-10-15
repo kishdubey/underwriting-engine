@@ -85,7 +85,10 @@ def underwrite():
             'cam_annual': cam_annual,
             'tax_annual': tax_annual,
             'insurance_annual': insurance_annual,
-            'total_recoveries': total_recoveries
+            'total_recoveries': total_recoveries,
+            # NEW: Support for analyst-matching configurations
+            'year1_starting_rent': data.get('year1_starting_rent'),
+            'use_fractional_escalation': data.get('use_fractional_escalation', False)
         }
 
         assumptions = {
@@ -108,7 +111,10 @@ def underwrite():
             'vacancy_months': data['vacancy_months'],
             'tenant_improvements_psf': data['ti_psf'],
             'leasing_commission_year1_pct': 0.08,
-            'leasing_commission_subsequent_pct': 0.035
+            'leasing_commission_subsequent_pct': 0.035,
+            # NEW: Support for analyst-matching configurations
+            'adjusted_market_rent_psf': data.get('adjusted_market_rent_psf', data['market_rent_psf']),
+            'use_fractional_escalation': data.get('use_fractional_escalation', False)
         }
 
         # Generate underwriting

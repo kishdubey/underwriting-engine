@@ -7,7 +7,7 @@ from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from cre_underwriter import CREUnderwriter
 from excel_parser import parse_rent_roll, parse_rent_roll_flexible, parse_pdf_rent_roll, validate_parsed_data
-from semantic_parser import SemanticDocumentParser, parse_multiple_documents
+from semantic_parser import SemanticDocumentParser, parse_multiple_documents, extract_inputs_from_documents
 from datetime import datetime
 import os
 import tempfile
@@ -192,18 +192,30 @@ def underwrite():
 @app.route('/parse-documents', methods=['POST'])
 def parse_documents():
     """
-    Parse multiple documents using semantic LLM-based extraction.
-    Handles rent rolls, tax bills, and CAM expenses in any format.
+    Extract all required underwriting inputs from uploaded documents.
+    Handles any combination of PDFs and Excel files.
 
-    Accepts multiple files and returns structured data for each.
+    Accepts multiple files and returns all required underwriting inputs.
 
     Example response:
     {
         "success": true,
-        "rent_roll": {...},
-        "tax_bill": {...},
-        "cam_expenses": {...},
-        "property_type": "multi_tenant" or "single_tenant"
+        "property_address": "120 Valleywood Drive",
+        "purchase_price": null,
+        "property_type": "Industrial",
+        "tenants": [
+            {
+                "tenant_name": "Sentrex Health Solutions Inc.",
+                "area_sf": 60071,
+                "current_rent_psf": 14.21,
+                "cam_psf": 5.07,
+                "tax_psf": 2.17,
+                "insurance_psf": 0.0,
+                "lease_start": "2022-03-01",
+                "lease_end": "2032-02-29",
+                "annual_escalation": 3.0
+            }
+        ]
     }
     """
     try:
@@ -228,18 +240,18 @@ def parse_documents():
                     file.save(tmp.name)
                     temp_paths.append(tmp.name)
 
-        # Parse all documents using semantic parser with local Ollama
+        # Extract underwriting inputs from all documents
         try:
-            results = parse_multiple_documents(temp_paths)
+            results = extract_inputs_from_documents(temp_paths)
         except Exception as e:
-            logger.error(f"Semantic parsing failed: {e}")
+            logger.error(f"Document extraction failed: {e}")
             # Clean up temp files
             for path in temp_paths:
                 try:
                     os.unlink(path)
                 except:
                     pass
-            return jsonify({"error": f"Failed to parse documents: {str(e)}"}), 500
+            return jsonify({"error": f"Failed to extract data from documents: {str(e)}"}), 500
 
         # Clean up temp files
         for path in temp_paths:
@@ -248,23 +260,14 @@ def parse_documents():
             except:
                 pass
 
-        # Determine property type based on rent roll
-        property_type = "single_tenant"
-        if results.get("rent_roll") and "tenants" in results["rent_roll"]:
-            num_tenants = len(results["rent_roll"]["tenants"])
-            if num_tenants > 1:
-                property_type = "multi_tenant"
+        # Check for errors
+        if "error" in results:
+            return jsonify({"success": False, "error": results["error"]}), 500
 
-        response = {
-            "success": True,
-            "property_type": property_type,
-            "rent_roll": results.get("rent_roll"),
-            "tax_bill": results.get("tax_bill"),
-            "cam_expenses": results.get("cam_expenses"),
-            "unknown_docs": results.get("unknown_docs", [])
-        }
+        # Add success flag and return
+        results["success"] = True
 
-        return jsonify(response)
+        return jsonify(results)
 
     except Exception as e:
         logger.error(f"Document parsing error: {e}")

@@ -129,8 +129,8 @@ def underwrite():
             'vacancy_start_month': data.get('vacancy_start_month'),
             'market_rent_start_month': data.get('market_rent_start_month'),
             'tenant_improvements_psf': data['ti_psf'],
-            'leasing_commission_year1_pct': 0.08,
-            'leasing_commission_subsequent_pct': 0.035,
+            'leasing_commission_year1_pct': data.get('leasing_commission_year1_pct', 8.0) / 100 if data.get('leasing_commission_year1_pct', 8.0) > 1 else data.get('leasing_commission_year1_pct', 0.08),
+            'leasing_commission_subsequent_pct': data.get('leasing_commission_subsequent_pct', 3.5) / 100 if data.get('leasing_commission_subsequent_pct', 3.5) > 1 else data.get('leasing_commission_subsequent_pct', 0.035),
             # NEW: Support for analyst-matching configurations
             'adjusted_market_rent_psf': data.get('adjusted_market_rent_psf', data['market_rent_psf']),
             'use_fractional_escalation': data.get('use_fractional_escalation', False)

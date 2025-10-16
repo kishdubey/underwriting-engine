@@ -457,6 +457,11 @@
                         <input type="number" step="0.01" id="ti_psf" name="ti_psf" value="5.00" required>
                     </div>
                     <div class="form-group">
+                        <label for="leasing_commission_subsequent_pct">Leasing Commission (%)</label>
+                        <input type="number" step="0.01" id="leasing_commission_subsequent_pct" name="leasing_commission_subsequent_pct" value="3.5" required>
+                        <span class="help-text">Commission rate for new leases (typically 3.5%)</span>
+                    </div>
+                    <div class="form-group">
                         <label for="exit_cap_rate">Exit Cap Rate (%)</label>
                         <input type="number" step="0.01" id="exit_cap_rate" name="exit_cap_rate" value="6.50" required>
                     </div>
@@ -646,8 +651,8 @@
             // Convert to numbers (handle empty/null values)
             ['purchase_price', 'area_sf', 'current_rent_psf', 'cam_psf', 'tax_psf',
                 'insurance_psf', 'annual_escalation', 'renewal_probability', 'market_rent_psf',
-                'market_escalation', 'vacancy_months', 'ti_psf', 'exit_cap_rate',
-                'adjusted_market_rent_psf', 'year1_starting_rent'].forEach(field => {
+                'market_escalation', 'vacancy_months', 'ti_psf', 'leasing_commission_subsequent_pct',
+                'exit_cap_rate', 'adjusted_market_rent_psf', 'year1_starting_rent'].forEach(field => {
                     const value = data[field];
                     data[field] = (value === null || value === '' || value === undefined) ? 0 : parseFloat(value);
                 });

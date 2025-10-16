@@ -16,6 +16,7 @@
   "market_escalation": 3.5,
   "vacancy_months": 8,
   "ti_psf": 5.0,
+  "leasing_commission_subsequent_pct": 3.5,
   "exit_cap_rate": 6.5,
   "year1_starting_rent": 874641,
   "use_fractional_escalation": true

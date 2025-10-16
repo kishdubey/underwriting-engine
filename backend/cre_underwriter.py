@@ -31,15 +31,16 @@ class CREUnderwriter:
         )
 
     def validate_assumptions(self, assumptions):
-        """Validate that required dynamic timing assumptions exist.
+        """Validate that required assumptions exist.
 
         Returns a list of missing or invalid keys. If empty, assumptions are OK.
+
+        Note: Using simplified Argus methodology, so vacancy_start_month and
+        market_rent_start_month are no longer required.
         """
         required = [
             'market_rent_psf',
             'vacancy_months',
-            'vacancy_start_month',
-            'market_rent_start_month',
             'renewal_probability',
             'leasing_commission_subsequent_pct',
             'tenant_improvements_psf'
@@ -56,16 +57,6 @@ class CREUnderwriter:
         vm = assumptions.get('vacancy_months')
         if vm is not None and (not isinstance(vm, int) or vm < 0):
             missing.append('vacancy_months (must be non-negative int)')
-
-        vsm = assumptions.get('vacancy_start_month')
-        if vsm is not None:
-            if not isinstance(vsm, int) or vsm < 1 or vsm > 12:
-                missing.append('vacancy_start_month (1-12)')
-
-        mrm = assumptions.get('market_rent_start_month')
-        if mrm is not None:
-            if not isinstance(mrm, int) or mrm < 1 or mrm > 12:
-                missing.append('market_rent_start_month (1-12)')
 
         return missing
         
@@ -776,14 +767,8 @@ class CREUnderwriter:
                 # For transition/expiry year, sometimes use different rate to match analyst
                 potential_rent_cell = get_column_letter(col) + str(potential_base_rent_row)
                 
-                # Check if we should use a different commission rate for analyst matching
-                if 'leasing_commission_expiry_year_pct' in assumptions:
-                    lc_rate = assumptions['leasing_commission_expiry_year_pct']
-                else:
-                    # Use first-year rate for the expiry year (default behavior)
-                    # But to match analyst, might need to use subsequent year rate
-                    lc_rate = assumptions.get('leasing_commission_expiry_year_pct_override', 
-                                            assumptions['leasing_commission_year1_pct'])
+                # Use subsequent year rate for expiry year (Argus standard)
+                lc_rate = assumptions.get('leasing_commission_subsequent_pct', 0.035)
                 
                 ws.cell(row, col).value = f'={potential_rent_cell}*{lc_rate}'
             else:

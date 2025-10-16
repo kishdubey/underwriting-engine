@@ -11,6 +11,11 @@ from datetime import datetime
 import os
 import tempfile
 from werkzeug.utils import secure_filename
+import logging
+
+# Basic logging setup
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('underwriting_api')
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for web interface
@@ -60,10 +65,21 @@ def underwrite():
         insurance_annual = data.get('insurance_psf', 0) * area
         total_recoveries = cam_annual + tax_annual + insurance_annual
 
-        # Parse dates and calculate lease term
+        # Parse dates in multiple formats and calculate lease term
         from datetime import datetime
-        lease_start = datetime.strptime(data['lease_start'], '%m/%d/%Y')
-        lease_end = datetime.strptime(data['lease_end'], '%m/%d/%Y')
+        
+        def parse_date(date_str):
+            """Parse date string in multiple formats"""
+            formats = ['%m/%d/%Y', '%Y-%m-%d', '%m-%d-%Y', '%Y/%m/%d']
+            for fmt in formats:
+                try:
+                    return datetime.strptime(date_str, fmt)
+                except ValueError:
+                    continue
+            raise ValueError(f"Unable to parse date: {date_str}. Expected formats: MM/DD/YYYY, YYYY-MM-DD, MM-DD-YYYY, or YYYY/MM/DD")
+        
+        lease_start = parse_date(data['lease_start'])
+        lease_end = parse_date(data['lease_end'])
         lease_term_years = (lease_end - lease_start).days / 365.25
 
         # Build complete data structures
@@ -109,6 +125,9 @@ def underwrite():
             'market_escalation_rate': data['market_escalation'] / 100,
             'market_term_years': 5,
             'vacancy_months': data['vacancy_months'],
+            # NEW: month-level timing for vacancy and market rent (1-12)
+            'vacancy_start_month': data.get('vacancy_start_month'),
+            'market_rent_start_month': data.get('market_rent_start_month'),
             'tenant_improvements_psf': data['ti_psf'],
             'leasing_commission_year1_pct': 0.08,
             'leasing_commission_subsequent_pct': 0.035,
@@ -117,8 +136,37 @@ def underwrite():
             'use_fractional_escalation': data.get('use_fractional_escalation', False)
         }
 
-        # Generate underwriting
+        # Generate underwriting: validate dynamic assumptions first
         underwriter = CREUnderwriter()
+
+        # Call return metrics calculation first to surface any missing dynamic inputs
+        try:
+            metrics_or_error = underwriter.calculate_return_metrics(property_data, lease_data, assumptions)
+        except Exception as e:
+            return jsonify({"error": f"Failed during validation: {str(e)}"}), 500
+
+        # If the underwriter signals missing assumptions, forward to UI so it can prompt the user
+        if isinstance(metrics_or_error, dict) and metrics_or_error.get('error') == 'needs_input':
+            missing = metrics_or_error.get('missing_assumptions', [])
+            logger.info(f"Missing dynamic assumptions requested by underwriter: {missing}")
+
+            # Provide suggested defaults where reasonable
+            suggested_defaults = {}
+            if 'vacancy_start_month' in missing:
+                suggested_defaults['vacancy_start_month'] = 3  # March is a common transition month
+            if 'market_rent_start_month' in missing:
+                suggested_defaults['market_rent_start_month'] = 4  # April follows March vacancy
+            if 'vacancy_months' in missing:
+                suggested_defaults['vacancy_months'] = 8
+
+            return jsonify({
+                'error': 'needs_input',
+                'missing_assumptions': missing,
+                'suggested_defaults': suggested_defaults,
+                'message': 'Please provide the missing dynamic assumptions to continue.'
+            }), 422
+
+        # All good: create the full underwriting workbook
         wb = underwriter.create_underwriting(property_data, lease_data, assumptions)
 
         # Save to temporary file

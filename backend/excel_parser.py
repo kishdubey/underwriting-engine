@@ -375,11 +375,31 @@ def parse_pdf_rent_roll(file_path: str) -> Dict:
         # Ensure dates are in correct order (start before end)
         if lease_data['lease_start'] and lease_data['lease_end']:
             try:
-                start = datetime.strptime(lease_data['lease_start'], '%m/%d/%Y')
-                end = datetime.strptime(lease_data['lease_end'], '%m/%d/%Y')
-
-                # Swap if they're backwards
-                if start > end:
+                # The dates at this point should be in MM/DD/YYYY format from earlier processing
+                # But handle potential variation in formats
+                start_formats = ['%m/%d/%Y', '%Y-%m-%d', '%m-%d-%Y', '%Y/%m/%d']
+                end_formats = ['%m/%d/%Y', '%Y-%m-%d', '%m-%d-%Y', '%Y/%m/%d']
+                
+                start = None
+                end = None
+                
+                # Parse start date
+                for fmt in start_formats:
+                    try:
+                        start = datetime.strptime(lease_data['lease_start'], fmt)
+                        break
+                    except ValueError:
+                        continue
+                
+                # Parse end date  
+                for fmt in end_formats:
+                    try:
+                        end = datetime.strptime(lease_data['lease_end'], fmt)
+                        break
+                    except ValueError:
+                        continue
+                
+                if start and end and start > end:
                     lease_data['lease_start'], lease_data['lease_end'] = lease_data['lease_end'], lease_data['lease_start']
             except:
                 pass

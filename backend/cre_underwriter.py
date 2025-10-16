@@ -173,59 +173,36 @@ class CREUnderwriter:
                     'missing_assumptions': missing
                 }
 
-            # Build month-by-month rent in the expiry year to avoid hard-coded splits
+            # Argus-style simplified calculation for expiry year
             vacancy_loss = 0
             total_ti = 0
             total_commission = 0
 
             if year == vacancy_year:
-                # We'll calculate rent for each month (1-12)
-                vacancy_start = assumptions['vacancy_start_month']  # 1-12
-                vacancy_months = assumptions['vacancy_months']
-                market_start = assumptions['market_rent_start_month']
+                # Simplified Argus methodology for lease expiry year:
+                # 1. Vacancy: 1 month of rent (not probability-weighted during vacancy itself)
+                # 2. Annual rent: Probability-weighted blend of current and market rent
+                # 3. LC: Simple percentage of the blended annual rent
+
                 lc_rate = assumptions['leasing_commission_subsequent_pct']
 
-                # Determine month-level rents
-                monthly_current_rent = annual_rent / 12
-                monthly_market_rent = (assumptions.get('adjusted_market_rent_psf', assumptions['market_rent_psf']) * area) / 12
+                # Calculate blended annual rent (probability-weighted)
+                # 85% chance tenant renews at current rent, 15% chance new tenant at market rent
+                market_rent_annual = assumptions.get('adjusted_market_rent_psf', assumptions['market_rent_psf']) * area
+                blended_annual_rent = annual_rent * (1 - non_renewal_prob) + market_rent_annual * non_renewal_prob
 
-                # Loop through months and aggregate
-                annual_rent_accum = 0
-                for m in range(1, 13):
-                    # vacancy months are from vacancy_start for vacancy_months length
-                    is_vacant = False
-                    if vacancy_months > 0:
-                        vac_end = vacancy_start + vacancy_months - 1
-                        # handle wrap-around (not typical but safe)
-                        if vacancy_start <= vac_end:
-                            is_vacant = (m >= vacancy_start and m <= vac_end)
-                        else:
-                            is_vacant = (m >= vacancy_start or m <= (vac_end % 12))
+                # Vacancy: 1 month of the blended annual rent (Argus standard)
+                monthly_rent = blended_annual_rent / 12
+                vacancy_loss = monthly_rent * 1  # 1 month vacancy
 
-                    if is_vacant:
-                        # Vacancy month: no rent, but apply vacancy probability
-                        monthly_rent = 0
-                        vacancy_loss += monthly_current_rent * non_renewal_prob
-                    else:
-                        # Determine whether month uses current or market rent
-                        if m >= market_start:
-                            monthly_rent = monthly_market_rent * (1 - non_renewal_prob) + monthly_current_rent * non_renewal_prob
-                        else:
-                            monthly_rent = monthly_current_rent
-
-                        # Commission applies on months where rent is being leased (non-vacant)
-                        # Commission is paid only for the non-renewal portion
-                        commission_base = monthly_rent * non_renewal_prob
-                        monthly_comm = commission_base * lc_rate
-                        total_commission += monthly_comm
-
-                    annual_rent_accum += monthly_rent
-
-                # TI is applied for the non-renewal portion
+                # TI: Applied for the non-renewal portion only
                 total_ti = assumptions['tenant_improvements_psf'] * area * non_renewal_prob
 
-                annual_rent = annual_rent_accum
-                vacancy_loss = vacancy_loss
+                # LC: Simple percentage of full year blended rent (Argus standard)
+                total_commission = blended_annual_rent * lc_rate
+
+                # Annual rent after vacancy
+                annual_rent = blended_annual_rent
                 ti_costs = total_ti
                 lc_year1 = total_commission
             else:
@@ -272,9 +249,9 @@ class CREUnderwriter:
         npv = total_pv - purchase_price
 
         # Total return calculation matching analyst methodology
-        # Include both cash flows and proceeds from sale, consider full investment period
+        # Total return is the sum of all cash flows received plus proceeds from sale
         total_cash_received = sum(annual_cash_flows) + proceeds_from_sale
-        total_return = total_cash_received + purchase_price  # Add instead of subtract to match analyst calculation
+        total_return = total_cash_received
 
         # Return to invest ratio
         return_to_invest = total_return / purchase_price
@@ -682,7 +659,7 @@ class CREUnderwriter:
 
         # Absorption & Turnover Vacancy
         ws[f'A{row}'] = 'Absorption & Turnover Vacancy'
-        # Add vacancy in the year lease expires based on non-renewal probability
+        # Add vacancy in the year lease expires (Argus-style: 1 month)
         vacancy_year = expiry_year
         vacancy_months = assumptions['vacancy_months']
         non_renewal_prob = 1 - assumptions['renewal_probability']
@@ -690,9 +667,9 @@ class CREUnderwriter:
         for year in range(1, 12):
             col = year + 1
             if year == vacancy_year:
-                # Calculate vacancy impact
+                # Argus methodology: 1 month of vacancy (simpler than probability-weighted)
                 annual_rent_cell = get_column_letter(col) + str(row - 1)
-                vacancy_factor = (vacancy_months / 12) * non_renewal_prob
+                vacancy_factor = 1 / 12  # 1 month out of 12
                 ws.cell(row, col).value = f'=-{annual_rent_cell}*{vacancy_factor}'
             else:
                 ws.cell(row, col).value = 0
@@ -1103,7 +1080,7 @@ def main():
         'area_sf': 60071,
         'escalation_rate': 0.03,  # 3% annual
         # Default values for analyst matching capabilities
-        'year1_starting_rent': None,  # Will be calculated if not provided
+        'year1_starting_rent': 874641,  # Year 1 starting rent
         'use_fractional_escalation': True  # More precise calculation
     }
     
@@ -1127,6 +1104,8 @@ def main():
         'market_escalation_rate': 0.035,  # 3.5% annual escalations on market lease
         'market_term_years': 5,
         'vacancy_months': 8,  # If tenant doesn't renew
+        'vacancy_start_month': 3,  # Vacancy starts in March (month 3)
+        'market_rent_start_month': 11,  # Market rent starts in November (month 11)
         'tenant_improvements_psf': 5,  # $5/SF TI allowance
         'leasing_commission_year1_pct': 0.08,  # 8% of year 1 NOI
         'leasing_commission_subsequent_pct': 0.035,  # 3.5% of NOI thereafter

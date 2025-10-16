@@ -432,14 +432,14 @@ def parse_pdf_rent_roll(file_path: str) -> Dict:
 
 def validate_parsed_data(lease_data: Dict) -> tuple[bool, list]:
     """
-    Validate that all required fields were extracted.
+    Validate that all required fields were extracted, supporting both flat and nested structures.
 
     Returns:
         (is_valid, missing_fields)
     """
     required_fields = [
         'property_address',
-        'tenant',
+        'tenant_name',
         'area_sf',
         'lease_start',
         'lease_end',
@@ -447,8 +447,23 @@ def validate_parsed_data(lease_data: Dict) -> tuple[bool, list]:
     ]
 
     missing = []
-    for field in required_fields:
-        if lease_data.get(field) is None:
-            missing.append(field)
+    
+    # Handle nested structure from semantic parser
+    if 'tenants' in lease_data and isinstance(lease_data['tenants'], list) and len(lease_data['tenants']) > 0:
+        # It's the new structure, validate inside the first tenant
+        tenant_data = lease_data['tenants'][0]
+        if not lease_data.get('property_address'):
+            missing.append('property_address')
+        
+        for field in ['tenant_name', 'area_sf', 'lease_start', 'lease_end', 'current_rent_psf']:
+            if tenant_data.get(field) is None:
+                missing.append(field)
+    else:
+        # Fallback to old flat structure validation
+        for field in required_fields:
+            # Adjust for different field name in flat structure
+            key = 'tenant' if field == 'tenant_name' else field
+            if lease_data.get(key) is None:
+                missing.append(field)
 
     return (len(missing) == 0, missing)

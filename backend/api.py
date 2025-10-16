@@ -7,6 +7,7 @@ from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from cre_underwriter import CREUnderwriter
 from excel_parser import parse_rent_roll, parse_rent_roll_flexible, parse_pdf_rent_roll, validate_parsed_data
+from semantic_parser import SemanticDocumentParser, parse_multiple_documents
 from datetime import datetime
 import os
 import tempfile
@@ -188,6 +189,88 @@ def underwrite():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/parse-documents', methods=['POST'])
+def parse_documents():
+    """
+    Parse multiple documents using semantic LLM-based extraction.
+    Handles rent rolls, tax bills, and CAM expenses in any format.
+
+    Accepts multiple files and returns structured data for each.
+
+    Example response:
+    {
+        "success": true,
+        "rent_roll": {...},
+        "tax_bill": {...},
+        "cam_expenses": {...},
+        "property_type": "multi_tenant" or "single_tenant"
+    }
+    """
+    try:
+        # Check if files were uploaded
+        if 'files' not in request.files and 'file' not in request.files:
+            return jsonify({"error": "No files uploaded"}), 400
+
+        # Handle both single and multiple file uploads
+        files = request.files.getlist('files') if 'files' in request.files else [request.files['file']]
+
+        if not files or files[0].filename == '':
+            return jsonify({"error": "No files selected"}), 400
+
+        # Save all files temporarily
+        temp_paths = []
+        for file in files:
+            if file.filename:
+                filename = secure_filename(file.filename)
+                suffix = os.path.splitext(filename)[1]
+
+                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                    file.save(tmp.name)
+                    temp_paths.append(tmp.name)
+
+        # Parse all documents using semantic parser with local Ollama
+        try:
+            results = parse_multiple_documents(temp_paths)
+        except Exception as e:
+            logger.error(f"Semantic parsing failed: {e}")
+            # Clean up temp files
+            for path in temp_paths:
+                try:
+                    os.unlink(path)
+                except:
+                    pass
+            return jsonify({"error": f"Failed to parse documents: {str(e)}"}), 500
+
+        # Clean up temp files
+        for path in temp_paths:
+            try:
+                os.unlink(path)
+            except:
+                pass
+
+        # Determine property type based on rent roll
+        property_type = "single_tenant"
+        if results.get("rent_roll") and "tenants" in results["rent_roll"]:
+            num_tenants = len(results["rent_roll"]["tenants"])
+            if num_tenants > 1:
+                property_type = "multi_tenant"
+
+        response = {
+            "success": True,
+            "property_type": property_type,
+            "rent_roll": results.get("rent_roll"),
+            "tax_bill": results.get("tax_bill"),
+            "cam_expenses": results.get("cam_expenses"),
+            "unknown_docs": results.get("unknown_docs", [])
+        }
+
+        return jsonify(response)
+
+    except Exception as e:
+        logger.error(f"Document parsing error: {e}")
+        return jsonify({"error": f"Failed to parse documents: {str(e)}"}), 500
+
+
 @app.route('/parse-excel', methods=['POST'])
 def parse_excel():
     """
@@ -229,18 +312,11 @@ def parse_excel():
             file.save(tmp.name)
             temp_path = tmp.name
 
-        # Parse based on file type
+        # Parse using semantic parser for both PDF and Excel
         try:
-            if is_pdf:
-                lease_data = parse_pdf_rent_roll(temp_path)
-            else:
-                # Try standard Excel parser first
-                try:
-                    lease_data = parse_rent_roll(temp_path)
-                except Exception as e:
-                    # Fallback to flexible parser
-                    print(f"Standard parser failed: {e}. Trying flexible parser...")
-                    lease_data = parse_rent_roll_flexible(temp_path)
+            parser = SemanticDocumentParser()
+            result = parser.parse_file(temp_path)
+            lease_data = result.get('extracted_data', {})
         except Exception as e:
             os.unlink(temp_path)
             return jsonify({"error": f"Failed to parse file: {str(e)}"}), 500

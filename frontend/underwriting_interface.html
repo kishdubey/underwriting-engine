@@ -566,7 +566,7 @@
         async function handleFileUpload(file) {
             fileName.textContent = `📄 ${file.name}`;
             fileInfo.classList.add('show');
-            parseStatus.textContent = 'Parsing Excel file...';
+            parseStatus.textContent = 'Parsing file...';
             parseStatus.className = 'parse-status';
 
             const formData = new FormData();
@@ -585,24 +585,42 @@
                     const data = result.data;
 
                     if (data.property_address) document.getElementById('property_address').value = data.property_address;
-                    if (data.tenant) document.getElementById('tenant').value = data.tenant;
-                    if (data.area_sf) document.getElementById('area_sf').value = data.area_sf;
-                    if (data.current_rent_psf) document.getElementById('current_rent_psf').value = data.current_rent_psf;
-                    if (data.cam_psf) document.getElementById('cam_psf').value = data.cam_psf;
-                    if (data.tax_psf) document.getElementById('tax_psf').value = data.tax_psf;
+
+                    // If top-level fields missing, use first tenant from tenants array
+                    const firstTenant = Array.isArray(data.tenants) && data.tenants.length > 0 ? data.tenants[0] : null;
+
+                    if (data.tenant || (firstTenant && firstTenant.tenant_name)) {
+                        document.getElementById('tenant').value = data.tenant || firstTenant.tenant_name || '';
+                    }
+                    if (data.area_sf || (firstTenant && firstTenant.area_sf)) {
+                        document.getElementById('area_sf').value = data.area_sf || firstTenant.area_sf || '';
+                    }
+                    if (data.current_rent_psf || (firstTenant && firstTenant.current_rent_psf)) {
+                        document.getElementById('current_rent_psf').value = data.current_rent_psf || firstTenant.current_rent_psf || '';
+                    }
+                    if (data.cam_psf || (firstTenant && firstTenant.cam_psf)) {
+                        document.getElementById('cam_psf').value = data.cam_psf || firstTenant.cam_psf || '';
+                    }
+                    if (data.tax_psf || (firstTenant && firstTenant.tax_psf)) {
+                        document.getElementById('tax_psf').value = data.tax_psf || firstTenant.tax_psf || '';
+                    }
                     if (data.insurance_psf) document.getElementById('insurance_psf').value = data.insurance_psf;
 
                     // Convert dates from MM/DD/YYYY to YYYY-MM-DD for HTML date inputs
                     function parseMMDDYYYY(dateStr) {
+                        if (!dateStr) return '';
                         const [month, day, year] = dateStr.split('/').map(Number);
                         return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
                     }
 
-                    if (data.lease_start) {
-                        document.getElementById('lease_start').value = parseMMDDYYYY(data.lease_start);
+                    const leaseStart = data.lease_start || (firstTenant && firstTenant.lease_start);
+                    const leaseEnd = data.lease_end || (firstTenant && firstTenant.lease_end);
+
+                    if (leaseStart) {
+                        document.getElementById('lease_start').value = parseMMDDYYYY(leaseStart);
                     }
-                    if (data.lease_end) {
-                        document.getElementById('lease_end').value = parseMMDDYYYY(data.lease_end);
+                    if (leaseEnd) {
+                        document.getElementById('lease_end').value = parseMMDDYYYY(leaseEnd);
                     }
 
                     if (data.annual_escalation) document.getElementById('annual_escalation').value = data.annual_escalation;
